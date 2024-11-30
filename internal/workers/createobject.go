@@ -1,6 +1,7 @@
 package workers
 
 import (
+	"log/slog"
 	"os"
 
 	"github.com/deletescape/goop/internal/utils"
@@ -8,7 +9,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/phuslu/log"
 )
 
 type CreateObjectContext struct {
@@ -24,29 +24,29 @@ func CreateObjectWorker(jt *jobtracker.JobTracker, f string, context jobtracker.
 
 	entry, err := c.Index.Entry(f)
 	if err != nil {
-		log.Error().Str("file", f).Err(err).Msg("file is not in index")
+		slog.Error("file is not in index", "file", f, "error", err)
 		return
 	}
 
 	fMode, err := entry.Mode.ToOSFileMode()
 	if err != nil {
-		log.Warn().Str("file", f).Err(err).Msg("failed to set filemode")
+		slog.Warn("failed to set filemode", "file", f, "error", err)
 	} else {
 		os.Chmod(fp, fMode)
 	}
 	os.Chown(fp, int(entry.UID), int(entry.GID))
 	os.Chtimes(fp, entry.ModifiedAt, entry.ModifiedAt)
-	//log.Info().Str("file", f).Msg("updated from index")
+	slog.Debug("updated from index", "file", f)
 
 	content, err := os.ReadFile(fp)
 	if err != nil {
-		log.Error().Str("file", f).Err(err).Msg("failed to read file")
+		slog.Error("failed to read file", "file", f, "error", err)
 		return
 	}
 
 	hash := plumbing.ComputeHash(plumbing.BlobObject, content)
 	if entry.Hash != hash {
-		log.Warn().Str("file", f).Msg("hash does not match hash in index, skipping object creation")
+		slog.Warn("hash does not match hash in index, skipping object creation", "file", f)
 		return
 	}
 
@@ -56,7 +56,7 @@ func CreateObjectWorker(jt *jobtracker.JobTracker, f string, context jobtracker.
 
 	ow, err := obj.Writer()
 	if err != nil {
-		log.Error().Str("file", f).Err(err).Msg("failed to create object writer")
+		slog.Error("failed to create object writer", "file", f, "error", err)
 		return
 	}
 	defer ow.Close()
@@ -64,8 +64,8 @@ func CreateObjectWorker(jt *jobtracker.JobTracker, f string, context jobtracker.
 
 	_, err = c.Storage.SetEncodedObject(obj)
 	if err != nil {
-		log.Error().Str("file", f).Err(err).Msg("failed to create object")
+		slog.Error("failed to create object", "file", f, "error", err)
 		return
 	}
-	//log.Info().Str("file", f).Msg("object created")
+	slog.Debug("object created", "file", f)
 }

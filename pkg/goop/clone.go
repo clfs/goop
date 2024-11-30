@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
@@ -24,7 +25,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
-	"github.com/phuslu/log"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpproxy"
 )
@@ -86,14 +86,14 @@ func CloneList(listFile, baseDir string, force, keep bool) error {
 		if dir != "" {
 			parsed, err := url.Parse(u)
 			if err != nil {
-				log.Error().Str("uri", u).Err(err).Msg("couldn't parse uri")
+				slog.Error("couldn't parse uri", "uri", u, "error", err)
 				continue
 			}
 			dir = utils.URL(dir, parsed.Host)
 		}
-		log.Info().Str("target", u).Str("dir", dir).Bool("force", force).Bool("keep", keep).Msg("starting download")
+		slog.Info("starting download", "target", u, "dir", dir, "force", force, "keep", keep)
 		if err := Clone(u, dir, force, keep); err != nil {
-			log.Error().Str("target", u).Str("dir", dir).Bool("force", force).Bool("keep", keep).Msg("download failed")
+			slog.Error("download failed", "target", u, "dir", dir, "force", force, "keep", keep, "error", err)
 		}
 	}
 	return nil
@@ -143,23 +143,23 @@ func Clone(u, dir string, force, keep bool) error {
 }
 
 func FetchGit(baseURL, baseDir string) error {
-	log.Info().Str("base", baseURL).Msg("testing for .git/HEAD")
+	slog.Info("testing for .git/HEAD", "base", baseURL)
 	code, body, err := c.Get(nil, utils.URL(baseURL, ".git/HEAD"))
 	if err != nil {
 		return err
 	}
 
 	if code != 200 {
-		log.Warn().Str("base", baseURL).Int("code", code).Msg(".git/HEAD doesn't appear to exist, clone will most likely fail")
+		slog.Warn(".git/HEAD doesn't appear to exist, clone will most likely fail", "base", baseURL, "code", code)
 	} else if !bytes.HasPrefix(body, refPrefix) {
-		log.Warn().Str("base", baseURL).Int("code", code).Msg(".git/HEAD doesn't appear to be a git HEAD file, clone will most likely fail")
+		slog.Warn(".git/HEAD doesn't appear to be a git HEAD file, clone will most likely fail", "base", baseURL, "code", code)
 	}
 
-	log.Info().Str("base", baseURL).Msg("testing if recursive download is possible")
+	slog.Info("testing if recursive download is possible", "base", baseURL)
 	code, body, err = c.Get(body, utils.URL(baseURL, ".git/"))
 	if err != nil {
 		if utils.IgnoreError(err) {
-			log.Error().Str("base", baseURL).Int("code", code).Err(err)
+			slog.Error("ignored error", "base", baseURL, "code", code, "error", err)
 		} else {
 			return err
 		}
@@ -172,13 +172,13 @@ func FetchGit(baseURL, baseDir string) error {
 			return err
 		}
 		if utils.StringsContain(indexedFiles, "HEAD") {
-			log.Info().Str("base", baseURL).Msg("fetching .git/ recursively")
+			slog.Info("fetching .git/ recursively", "base", baseURL)
 			jt := jobtracker.NewJobTracker(workers.RecursiveDownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 			jt.AddJobs(indexedFiles...)
 			jt.StartAndWait(workers.RecursiveDownloadContext{C: c, BaseURL: utils.URL(baseURL, ".git/"), BaseDir: utils.URL(baseDir, ".git/")}, true)
 
 			if err := checkout(baseDir); err != nil {
-				log.Error().Str("dir", baseDir).Err(err).Msg("failed to checkout")
+				slog.Error("failed to checkout", "dir", baseDir, "error", err)
 			}
 			if err := fetchIgnored(baseDir, baseURL); err != nil {
 				return err
@@ -186,17 +186,17 @@ func FetchGit(baseURL, baseDir string) error {
 		}
 	}
 
-	log.Info().Str("base", baseURL).Msg("fetching common files")
+	slog.Info("fetching common files", "base", baseURL)
 	jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 	jt.AddJobs(commonFiles...)
 	jt.StartAndWait(workers.DownloadContext{C: c, BaseDir: baseDir, BaseURL: baseURL}, false)
 
-	log.Info().Str("base", baseURL).Msg("finding refs")
+	slog.Info("finding refs", "base", baseURL)
 	jt = jobtracker.NewJobTracker(workers.FindRefWorker, maxConcurrency, jobtracker.DefaultNapper)
 	jt.AddJobs(commonRefs...)
 	jt.StartAndWait(workers.FindRefContext{C: c, BaseURL: baseURL, BaseDir: baseDir}, true)
 
-	log.Info().Str("base", baseURL).Msg("finding packs")
+	slog.Info("finding packs", "base", baseURL)
 	infoPacksPath := utils.URL(baseDir, ".git/objects/info/packs")
 	if utils.Exists(infoPacksPath) {
 		infoPacks, err := os.ReadFile(infoPacksPath)
@@ -215,7 +215,7 @@ func FetchGit(baseURL, baseDir string) error {
 		jt.StartAndWait(workers.DownloadContext{C: c, BaseURL: baseURL, BaseDir: baseDir}, false)
 	}
 
-	log.Info().Str("base", baseURL).Msg("finding objects")
+	slog.Info("finding objects", "base", baseURL)
 	objs := make(map[string]bool) // object "set"
 	//var packed_objs [][]byte
 
@@ -263,11 +263,10 @@ func FetchGit(baseURL, baseDir string) error {
 					refName := strings.TrimPrefix(path, refLogPrefix)
 					filePath := utils.URL(gitRefsDir, refName)
 					if !utils.Exists(filePath) {
-						log.Info().Str("dir", baseDir).Str("ref", refName).Msg("generating ref file")
-
+						slog.Info("generating ref file", "dir", baseDir, "ref", refName)
 						content, err := os.ReadFile(path)
 						if err != nil {
-							log.Error().Str("dir", baseDir).Str("ref", refName).Err(err).Msg("couldn't read reflog file")
+							slog.Error("couldn't read reflog file", "dir", baseDir, "ref", refName, "error", err)
 							return nil
 						}
 
@@ -276,12 +275,12 @@ func FetchGit(baseURL, baseDir string) error {
 						lastEntryObj := logObjs[len(logObjs)-1][1]
 
 						if err := utils.CreateParentFolders(filePath); err != nil {
-							log.Error().Str("file", filePath).Err(err).Msg("couldn't create parent directories")
+							slog.Error("couldn't create parent directories", "file", filePath, "error", err)
 							return nil
 						}
 
 						if err := os.WriteFile(filePath, lastEntryObj, os.ModePerm); err != nil {
-							log.Error().Str("file", filePath).Err(err).Msg("couldn't write to file")
+							slog.Error("couldn't write to file", "file", filePath, "error", err)
 						}
 					}
 				}
@@ -298,7 +297,7 @@ func FetchGit(baseURL, baseDir string) error {
 
 		content, err := os.ReadFile(f)
 		if err != nil {
-			log.Error().Str("file", f).Err(err).Msg("couldn't read reflog file")
+			slog.Error("couldn't read reflog file", "file", f, "error", err)
 			return err
 		}
 
@@ -317,7 +316,7 @@ func FetchGit(baseURL, baseDir string) error {
 		var idx index.Index
 		decoder := index.NewDecoder(f)
 		if err := decoder.Decode(&idx); err != nil {
-			log.Error().Str("dir", baseDir).Err(err).Msg("couldn't decode git index")
+			slog.Error("couldn't decode git index", "dir", baseDir, "error", err)
 		}
 		for _, entry := range idx.Entries {
 			objs[entry.Hash.String()] = true
@@ -341,7 +340,7 @@ func FetchGit(baseURL, baseDir string) error {
 		}
 		return nil
 	}); err != nil {
-		log.Error().Str("dir", baseDir).Err(err).Msg("error while processing object files")
+		slog.Error("error while processing object files", "dir", baseDir, "error", err)
 	}
 
 	// Parse stand alone commit graph file
@@ -354,7 +353,7 @@ func FetchGit(baseURL, baseDir string) error {
 		jt = jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 		f, err := os.Open(commitGraphList)
 		if err != nil {
-			log.Error().Str("dir", baseDir).Err(err).Msg("failed to open commit graph chain")
+			slog.Error("failed to open commit graph chain", "dir", baseDir, "error", err)
 		} else {
 			scanner := bufio.NewScanner(f)
 			for scanner.Scan() {
@@ -394,7 +393,7 @@ func FetchGit(baseURL, baseDir string) error {
 		}
 	} */
 
-	log.Info().Str("base", baseURL).Msg("fetching objects")
+	slog.Info("fetching objects", "base", baseURL)
 	jt = jobtracker.NewJobTracker(workers.FindObjectsWorker, maxConcurrency, jobtracker.DefaultNapper)
 	for obj := range objs {
 		jt.AddJob(obj)
@@ -410,7 +409,7 @@ func FetchGit(baseURL, baseDir string) error {
 
 	// TODO: disable lfs in checkout (for now lfs support depends on lfs NOT being setup on the system you use goop on)
 	if err := checkout(baseDir); err != nil {
-		log.Error().Str("dir", baseDir).Err(err).Msg("failed to checkout")
+		slog.Error("failed to checkout", "dir", baseDir, "error", err)
 	}
 
 	// <fetch lfs objects and manually check them out>
@@ -424,7 +423,7 @@ func FetchGit(baseURL, baseDir string) error {
 }
 
 func checkout(baseDir string) error {
-	log.Info().Str("dir", baseDir).Msg("running git checkout .")
+	slog.Info("running git checkout .", "dir", baseDir)
 	cmd := exec.Command("git", "checkout", ".")
 	cmd.Dir = baseDir
 	return cmd.Run()
@@ -433,10 +432,10 @@ func checkout(baseDir string) error {
 func fetchLfs(baseDir, baseURL string) {
 	attrPath := utils.URL(baseDir, ".gitattributes")
 	if utils.Exists(attrPath) {
-		log.Info().Str("dir", baseDir).Msg("attempting to fetch potential git lfs objects")
+		slog.Info("attempting to fetch potential git lfs objects", "dir", baseDir)
 		f, err := os.Open(attrPath)
 		if err != nil {
-			log.Error().Str("dir", baseDir).Err(err).Msg("couldn't read git attributes")
+			slog.Error("couldn't read git attributes", "dir", baseDir, "error", err)
 			return
 		}
 		defer f.Close()
@@ -461,14 +460,14 @@ func fetchLfs(baseDir, baseURL string) {
 			}
 		}
 		if err := scanner.Err(); err != nil {
-			log.Error().Str("dir", baseDir).Err(err).Msg("error while parsing git attributes file")
+			slog.Error("error while parsing git attributes file", "dir", baseDir, "error", err)
 		}
 
 		var hashes []string
 		readStub := func(fp string) {
 			f, err := os.Open(fp)
 			if err != nil {
-				log.Error().Str("file", fp).Err(err).Msg("couldn't open lfs stub file")
+				slog.Error("couldn't open lfs stub file", "file", fp, "error", err)
 				return
 			}
 			defer f.Close()
@@ -484,7 +483,7 @@ func fetchLfs(baseDir, baseURL string) {
 				}
 			}
 			if err := scanner.Err(); err != nil {
-				log.Error().Str("file", fp).Err(err).Msg("error while parsing lfs stub file")
+				slog.Error("error while parsing lfs stub file", "file", fp, "error", err)
 			}
 		}
 
@@ -503,7 +502,7 @@ func fetchLfs(baseDir, baseURL string) {
 				for _, filter := range filters {
 					match, err := filepath.Match(filter, filepath.Base(path))
 					if err != nil {
-						log.Error().Str("dir", baseDir).Str("filter", filter).Err(err).Msg("failed to apply filter")
+						slog.Error("failed to apply filter", "dir", baseDir, "filter", filter, "error", err)
 						continue
 					}
 					if match {
@@ -513,7 +512,7 @@ func fetchLfs(baseDir, baseURL string) {
 				return nil
 			})
 		if err != nil {
-			log.Error().Str("dir", baseDir).Err(err).Msg("error while testing git lfs filters")
+			slog.Error("error while testing git lfs filters", "dir", baseDir, "error", err)
 		}
 
 		// TODO: global filters
@@ -531,19 +530,19 @@ func fetchLfs(baseDir, baseURL string) {
 func fetchMissing(baseDir, baseURL string, objStorage *filesystem.ObjectStorage) {
 	indexPath := utils.URL(baseDir, ".git/index")
 	if utils.Exists(indexPath) {
-		log.Info().Str("base", baseURL).Str("dir", baseDir).Msg("attempting to fetch potentially missing files")
+		slog.Info("attempting to fetch potentially missing files", "base", baseURL, "dir", baseDir)
 
 		var missingFiles []string
 		var idx index.Index
 		f, err := os.Open(indexPath)
 		if err != nil {
-			log.Error().Str("dir", baseDir).Err(err).Msg("couldn't read git index")
+			slog.Error("couldn't read git index", "dir", baseDir, "error", err)
 			return
 		}
 		defer f.Close()
 		decoder := index.NewDecoder(f)
 		if err := decoder.Decode(&idx); err != nil {
-			log.Error().Str("dir", baseDir).Err(err).Msg("couldn't decode git index")
+			slog.Error("couldn't decode git index", "dir", baseDir, "error", err)
 			return
 		} else {
 			jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
@@ -569,7 +568,7 @@ func fetchMissing(baseDir, baseURL string, objStorage *filesystem.ObjectStorage)
 func fetchIgnored(baseDir, baseURL string) error {
 	ignorePath := utils.URL(baseDir, ".gitignore")
 	if utils.Exists(ignorePath) {
-		log.Info().Str("base", baseDir).Msg("atempting to fetch ignored files")
+		slog.Info("attempting to fetch ignored files", "base", baseDir)
 
 		ignoreFile, err := os.Open(ignorePath)
 		if err != nil {
@@ -603,24 +602,24 @@ func parseGraphFile(baseDir, graphFile string, objs map[string]bool) {
 	if utils.Exists(graphFile) {
 		f, err := os.Open(graphFile)
 		if err != nil {
-			log.Error().Str("dir", baseDir).Str("graph", graphFile).Err(err).Msg("failed to open commit graph")
+			slog.Error("couldn't open commit graph", "dir", baseDir, "graph", graphFile, "error", err)
 			return
 		}
 		graph, err := commitgraph.OpenFileIndex(f)
 		if err != nil {
-			log.Error().Str("dir", baseDir).Str("graph", graphFile).Err(err).Msg("failed to decode commit graph")
+			slog.Error("failed to decode commit graph", "dir", baseDir, "graph", graphFile, "error", err)
 			return
 		}
 		for _, hash := range graph.Hashes() {
 			objs[hash.String()] = true
 			i, err := graph.GetIndexByHash(hash)
 			if err != nil {
-				log.Error().Str("dir", baseDir).Str("graph", graphFile).Str("commit", hash.String()).Err(err).Msg("failed get index from graph")
+				slog.Error("failed to get index from graph", "dir", baseDir, "graph", graphFile, "commit", hash.String(), "error", err)
 				continue
 			}
 			data, err := graph.GetCommitDataByIndex(i)
 			if err != nil {
-				log.Error().Str("dir", baseDir).Str("graph", graphFile).Str("commit", hash.String()).Err(err).Msg("failed get commit data from graph")
+				slog.Error("failed to get commit data from graph", "dir", baseDir, "graph", graphFile, "commit", hash.String(), "error", err)
 				continue
 			}
 			objs[data.TreeHash.String()] = true

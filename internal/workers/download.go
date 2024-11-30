@@ -1,11 +1,11 @@
 package workers
 
 import (
+	"log/slog"
 	"os"
 
 	"github.com/deletescape/goop/internal/utils"
 	"github.com/deletescape/jobtracker"
-	"github.com/phuslu/log"
 	"github.com/valyala/fasthttp"
 )
 
@@ -23,7 +23,7 @@ func DownloadWorker(jt *jobtracker.JobTracker, file string, context jobtracker.C
 
 	targetFile := utils.URL(c.BaseDir, file)
 	if utils.Exists(targetFile) {
-		log.Info().Str("file", targetFile).Msg("already fetched, skipping redownload")
+		slog.Info("already fetched, skipping redownload", "file", targetFile)
 		return
 	}
 	uri := utils.URL(c.BaseURL, file)
@@ -34,28 +34,28 @@ func DownloadWorker(jt *jobtracker.JobTracker, file string, context jobtracker.C
 			jt.AddJob(file)
 			return
 		}
-		log.Warn().Str("uri", uri).Int("code", code).Msg("couldn't fetch file")
+		slog.Warn("couldn't fetch file", "uri", uri, "code", code)
 		return
 	} else if err != nil {
-		log.Error().Str("uri", uri).Int("code", code).Err(err).Msg("couldn't fetch file")
+		slog.Error("couldn't fetch file", "uri", uri, "code", code, "error", err)
 		return
 	}
 
 	if !c.AllowHTML && utils.IsHTML(body) {
-		log.Warn().Str("uri", uri).Msg("file appears to be html, skipping")
+		slog.Warn("file appears to be html, skipping", "uri", uri)
 		return
 	}
 	if !c.AlllowEmpty && utils.IsEmptyBytes(body) {
-		log.Warn().Str("uri", uri).Msg("file appears to be empty, skipping")
+		slog.Warn("file appears to be empty, skipping", "uri", uri)
 		return
 	}
 	if err := utils.CreateParentFolders(targetFile); err != nil {
-		log.Error().Str("uri", uri).Str("file", targetFile).Err(err).Msg("couldn't create parent directories")
+		slog.Error("couldn't create parent directories", "uri", uri, "file", targetFile, "error", err)
 		return
 	}
 	if err := os.WriteFile(targetFile, body, os.ModePerm); err != nil {
-		log.Error().Str("uri", uri).Str("file", targetFile).Err(err).Msg("clouldn't write file")
+		slog.Error("couldn't write file", "uri", uri, "file", targetFile, "error", err)
 		return
 	}
-	log.Info().Str("uri", uri).Str("file", file).Msg("fetched file")
+	slog.Info("fetched file", "uri", uri, "file", file)
 }

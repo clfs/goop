@@ -1,10 +1,9 @@
 package workers
 
 import (
+	"log/slog"
 	"sync/atomic"
 	"time"
-
-	"github.com/phuslu/log"
 )
 
 var rateLimited int32
@@ -14,7 +13,7 @@ var unsetter int32
 func setRatelimited() {
 	if atomic.CompareAndSwapInt32(&rateLimited, 0, 1) {
 		atomic.StoreUint32(&ratelimitCount, atomic.LoadUint32(&ratelimitCount)+1)
-		log.Warn().Uint32("count", atomic.LoadUint32(&ratelimitCount)).Msg("server is rate limiting us, waiting...")
+		slog.Warn("server is rate limiting us, waiting...", "count", atomic.LoadUint32(&ratelimitCount))
 	}
 }
 

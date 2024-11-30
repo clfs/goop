@@ -2,10 +2,10 @@
 package cmd
 
 import (
+	"log/slog"
 	"os"
 
 	"github.com/deletescape/goop/pkg/goop"
-	"github.com/phuslu/log"
 	"github.com/spf13/cobra"
 )
 
@@ -23,12 +23,12 @@ var rootCmd = &cobra.Command{
 		}
 		if list {
 			if err := goop.CloneList(args[0], dir, force, keep); err != nil {
-				log.Error().Err(err).Msg("exiting")
+				slog.Error("exiting", "error", err)
 				os.Exit(1)
 			}
 		} else {
 			if err := goop.Clone(args[0], dir, force, keep); err != nil {
-				log.Error().Err(err).Msg("exiting")
+				slog.Error("exiting", "error", err)
 				os.Exit(1)
 			}
 		}
@@ -43,7 +43,7 @@ func init() {
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		log.Error().Err(err).Msg("exiting")
+		slog.Error("exiting", "error", err)
 		os.Exit(1)
 	}
 }
