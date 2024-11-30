@@ -11,7 +11,7 @@ func IsEmptyBytes(b []byte) bool {
 	if len(b) == 0 {
 		return true
 	}
-	for i := 0 ; i < len(b); i++ {
+	for i := 0; i < len(b); i++ {
 		c := b[i]
 		if c == 0 {
 			continue
