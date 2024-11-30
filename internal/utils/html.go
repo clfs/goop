@@ -10,7 +10,7 @@ import (
 
 var htmlTag = []byte{'<', 'h', 't', 'm', 'l'}
 
-func IsHtml(body []byte) bool {
+func IsHTML(body []byte) bool {
 	return bytes.Contains(body, htmlTag)
 }
 

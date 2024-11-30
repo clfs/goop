@@ -1,7 +1,6 @@
 package workers
 
 import (
-	"io/ioutil"
 	"os"
 
 	"github.com/deletescape/goop/internal/utils"
@@ -12,9 +11,9 @@ import (
 
 type DownloadContext struct {
 	C           *fasthttp.Client
-	BaseUrl     string
+	BaseURL     string
 	BaseDir     string
-	AllowHtml   bool
+	AllowHTML   bool
 	AlllowEmpty bool
 }
 
@@ -22,12 +21,12 @@ func DownloadWorker(jt *jobtracker.JobTracker, file string, context jobtracker.C
 	c := context.(DownloadContext)
 	checkRatelimted()
 
-	targetFile := utils.Url(c.BaseDir, file)
+	targetFile := utils.URL(c.BaseDir, file)
 	if utils.Exists(targetFile) {
 		log.Info().Str("file", targetFile).Msg("already fetched, skipping redownload")
 		return
 	}
-	uri := utils.Url(c.BaseUrl, file)
+	uri := utils.URL(c.BaseURL, file)
 	code, body, err := c.C.Get(nil, uri)
 	if err == nil && code != 200 {
 		if code == 429 {
@@ -42,7 +41,7 @@ func DownloadWorker(jt *jobtracker.JobTracker, file string, context jobtracker.C
 		return
 	}
 
-	if !c.AllowHtml && utils.IsHtml(body) {
+	if !c.AllowHTML && utils.IsHTML(body) {
 		log.Warn().Str("uri", uri).Msg("file appears to be html, skipping")
 		return
 	}
@@ -54,7 +53,7 @@ func DownloadWorker(jt *jobtracker.JobTracker, file string, context jobtracker.C
 		log.Error().Str("uri", uri).Str("file", targetFile).Err(err).Msg("couldn't create parent directories")
 		return
 	}
-	if err := ioutil.WriteFile(targetFile, body, os.ModePerm); err != nil {
+	if err := os.WriteFile(targetFile, body, os.ModePerm); err != nil {
 		log.Error().Str("uri", uri).Str("file", targetFile).Err(err).Msg("clouldn't write file")
 		return
 	}

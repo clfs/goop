@@ -2,7 +2,6 @@ package workers
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"regexp"
 	"strings"
@@ -23,7 +22,7 @@ var checkedRefsMutex sync.Mutex
 
 type FindRefContext struct {
 	C       *fasthttp.Client
-	BaseUrl string
+	BaseURL string
 	BaseDir string
 }
 
@@ -42,17 +41,17 @@ func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Co
 	}
 	checkedRefsMutex.Unlock()
 
-	targetFile := utils.Url(c.BaseDir, path)
+	targetFile := utils.URL(c.BaseDir, path)
 	if utils.Exists(targetFile) {
 		log.Info().Str("file", targetFile).Msg("already fetched, skipping redownload")
-		content, err := ioutil.ReadFile(targetFile)
+		content, err := os.ReadFile(targetFile)
 		if err != nil {
 			log.Error().Str("file", targetFile).Err(err).Msg("error while reading file")
 			return
 		}
 		for _, ref := range refRegex.FindAll(content, -1) {
-			jt.AddJob(utils.Url(".git", string(ref)))
-			jt.AddJob(utils.Url(".git/logs", string(ref)))
+			jt.AddJob(utils.URL(".git", string(ref)))
+			jt.AddJob(utils.URL(".git/logs", string(ref)))
 		}
 		if path == ".git/FETCH_HEAD" {
 			// TODO figure out actual remote instead of just assuming origin here (if possible)
@@ -81,7 +80,7 @@ func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Co
 		return
 	}
 
-	uri := utils.Url(c.BaseUrl, path)
+	uri := utils.URL(c.BaseURL, path)
 	code, body, err := c.C.Get(nil, uri)
 	if err == nil && code != 200 {
 		if code == 429 {
@@ -96,7 +95,7 @@ func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Co
 		return
 	}
 
-	if utils.IsHtml(body) {
+	if utils.IsHTML(body) {
 		log.Warn().Str("uri", uri).Msg("file appears to be html, skipping")
 		return
 	}
@@ -108,7 +107,7 @@ func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Co
 		log.Error().Str("uri", uri).Str("file", targetFile).Err(err).Msg("couldn't create parent directories")
 		return
 	}
-	if err := ioutil.WriteFile(targetFile, body, os.ModePerm); err != nil {
+	if err := os.WriteFile(targetFile, body, os.ModePerm); err != nil {
 		log.Error().Str("uri", uri).Str("file", targetFile).Err(err).Msg("clouldn't write file")
 		return
 	}
@@ -116,8 +115,8 @@ func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Co
 	log.Info().Str("uri", uri).Msg("fetched ref")
 
 	for _, ref := range refRegex.FindAll(body, -1) {
-		jt.AddJob(utils.Url(".git", string(ref)))
-		jt.AddJob(utils.Url(".git/logs", string(ref)))
+		jt.AddJob(utils.URL(".git", string(ref)))
+		jt.AddJob(utils.URL(".git/logs", string(ref)))
 	}
 	if path == ".git/FETCH_HEAD" {
 		// TODO figure out actual remote instead of just assuming origin here (if possible)
