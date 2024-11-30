@@ -1,3 +1,4 @@
+// Package cmd defines a command type for the goop tool.
 package cmd
 
 import (

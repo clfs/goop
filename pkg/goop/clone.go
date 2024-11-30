@@ -1,3 +1,4 @@
+// Package goop implements functionality for dumping git repositories.
 package goop
 
 import (
@@ -5,7 +6,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -31,27 +31,27 @@ import (
 
 func proxyFromEnv() fasthttp.DialFunc {
 	allProxy, okAll := os.LookupEnv("all_proxy")
-	httpProxy, okHttp := os.LookupEnv("http_proxy")
-	httpsProxy, okHttps := os.LookupEnv("https_proxy")
+	httpProxy, okHTTP := os.LookupEnv("http_proxy")
+	httpsProxy, okHTTPS := os.LookupEnv("https_proxy")
 
 	uriToDial := func(u string) fasthttp.DialFunc {
-		pUri, err := url.Parse(u)
+		pURI, err := url.Parse(u)
 		if err != nil {
 			panic(err) // TODO: uh, handle better
 		}
-		if pUri.Scheme == "socks5" {
-			return fasthttpproxy.FasthttpSocksDialer(pUri.Host)
+		if pURI.Scheme == "socks5" {
+			return fasthttpproxy.FasthttpSocksDialer(pURI.Host)
 		}
-		return fasthttpproxy.FasthttpHTTPDialer(pUri.Host) // this probly doesnt work for proxys with auth rn
+		return fasthttpproxy.FasthttpHTTPDialer(pURI.Host) // this probly doesnt work for proxys with auth rn
 	}
 
 	if okAll {
 		return uriToDial(allProxy)
 	}
-	if okHttp {
+	if okHTTP {
 		return uriToDial(httpProxy)
 	}
-	if okHttps {
+	if okHTTPS {
 		return uriToDial(httpsProxy)
 	}
 
@@ -89,7 +89,7 @@ func CloneList(listFile, baseDir string, force, keep bool) error {
 				log.Error().Str("uri", u).Err(err).Msg("couldn't parse uri")
 				continue
 			}
-			dir = utils.Url(dir, parsed.Host)
+			dir = utils.URL(dir, parsed.Host)
 		}
 		log.Info().Str("target", u).Str("dir", dir).Bool("force", force).Bool("keep", keep).Msg("starting download")
 		if err := Clone(u, dir, force, keep); err != nil {
@@ -100,18 +100,18 @@ func CloneList(listFile, baseDir string, force, keep bool) error {
 }
 
 func Clone(u, dir string, force, keep bool) error {
-	baseUrl := strings.TrimSuffix(u, "/")
-	baseUrl = strings.TrimSuffix(baseUrl, "/HEAD")
-	baseUrl = strings.TrimSuffix(baseUrl, "/.git")
-	parsed, err := url.Parse(baseUrl)
+	baseURL := strings.TrimSuffix(u, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/HEAD")
+	baseURL = strings.TrimSuffix(baseURL, "/.git")
+	parsed, err := url.Parse(baseURL)
 	if err != nil {
 		return err
 	}
 	if parsed.Scheme == "" {
 		parsed.Scheme = "http"
 	}
-	baseUrl = parsed.String()
-	parsed, err = url.Parse(baseUrl)
+	baseURL = parsed.String()
+	parsed, err = url.Parse(baseURL)
 	if err != nil {
 		return err
 	}
@@ -139,67 +139,67 @@ func Clone(u, dir string, force, keep bool) error {
 		}
 	}
 
-	return FetchGit(baseUrl, baseDir)
+	return FetchGit(baseURL, baseDir)
 }
 
-func FetchGit(baseUrl, baseDir string) error {
-	log.Info().Str("base", baseUrl).Msg("testing for .git/HEAD")
-	code, body, err := c.Get(nil, utils.Url(baseUrl, ".git/HEAD"))
+func FetchGit(baseURL, baseDir string) error {
+	log.Info().Str("base", baseURL).Msg("testing for .git/HEAD")
+	code, body, err := c.Get(nil, utils.URL(baseURL, ".git/HEAD"))
 	if err != nil {
 		return err
 	}
 
 	if code != 200 {
-		log.Warn().Str("base", baseUrl).Int("code", code).Msg(".git/HEAD doesn't appear to exist, clone will most likely fail")
+		log.Warn().Str("base", baseURL).Int("code", code).Msg(".git/HEAD doesn't appear to exist, clone will most likely fail")
 	} else if !bytes.HasPrefix(body, refPrefix) {
-		log.Warn().Str("base", baseUrl).Int("code", code).Msg(".git/HEAD doesn't appear to be a git HEAD file, clone will most likely fail")
+		log.Warn().Str("base", baseURL).Int("code", code).Msg(".git/HEAD doesn't appear to be a git HEAD file, clone will most likely fail")
 	}
 
-	log.Info().Str("base", baseUrl).Msg("testing if recursive download is possible")
-	code, body, err = c.Get(body, utils.Url(baseUrl, ".git/"))
+	log.Info().Str("base", baseURL).Msg("testing if recursive download is possible")
+	code, body, err = c.Get(body, utils.URL(baseURL, ".git/"))
 	if err != nil {
 		if utils.IgnoreError(err) {
-			log.Error().Str("base", baseUrl).Int("code", code).Err(err)
+			log.Error().Str("base", baseURL).Int("code", code).Err(err)
 		} else {
 			return err
 		}
 	}
 
-	if code == 200 && utils.IsHtml(body) {
-		lnk, _ := url.Parse(utils.Url(baseUrl, ".git/"))
+	if code == 200 && utils.IsHTML(body) {
+		lnk, _ := url.Parse(utils.URL(baseURL, ".git/"))
 		indexedFiles, err := utils.GetIndexedFiles(body, lnk.Path)
 		if err != nil {
 			return err
 		}
 		if utils.StringsContain(indexedFiles, "HEAD") {
-			log.Info().Str("base", baseUrl).Msg("fetching .git/ recursively")
+			log.Info().Str("base", baseURL).Msg("fetching .git/ recursively")
 			jt := jobtracker.NewJobTracker(workers.RecursiveDownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 			jt.AddJobs(indexedFiles...)
-			jt.StartAndWait(workers.RecursiveDownloadContext{C: c, BaseUrl: utils.Url(baseUrl, ".git/"), BaseDir: utils.Url(baseDir, ".git/")}, true)
+			jt.StartAndWait(workers.RecursiveDownloadContext{C: c, BaseURL: utils.URL(baseURL, ".git/"), BaseDir: utils.URL(baseDir, ".git/")}, true)
 
 			if err := checkout(baseDir); err != nil {
 				log.Error().Str("dir", baseDir).Err(err).Msg("failed to checkout")
 			}
-			if err := fetchIgnored(baseDir, baseUrl); err != nil {
+			if err := fetchIgnored(baseDir, baseURL); err != nil {
 				return err
 			}
 		}
 	}
 
-	log.Info().Str("base", baseUrl).Msg("fetching common files")
+	log.Info().Str("base", baseURL).Msg("fetching common files")
 	jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 	jt.AddJobs(commonFiles...)
-	jt.StartAndWait(workers.DownloadContext{C: c, BaseDir: baseDir, BaseUrl: baseUrl}, false)
+	jt.StartAndWait(workers.DownloadContext{C: c, BaseDir: baseDir, BaseURL: baseURL}, false)
 
-	log.Info().Str("base", baseUrl).Msg("finding refs")
+	log.Info().Str("base", baseURL).Msg("finding refs")
 	jt = jobtracker.NewJobTracker(workers.FindRefWorker, maxConcurrency, jobtracker.DefaultNapper)
 	jt.AddJobs(commonRefs...)
-	jt.StartAndWait(workers.FindRefContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir}, true)
+	jt.StartAndWait(workers.FindRefContext{C: c, BaseURL: baseURL, BaseDir: baseDir}, true)
 
-	log.Info().Str("base", baseUrl).Msg("finding packs")
-	infoPacksPath := utils.Url(baseDir, ".git/objects/info/packs")
+	log.Info().Str("base", baseURL).Msg("finding packs")
+	infoPacksPath := utils.URL(baseDir, ".git/objects/info/packs")
 	if utils.Exists(infoPacksPath) {
-		infoPacks, err := ioutil.ReadFile(infoPacksPath)
+		infoPacks, err := os.ReadFile(infoPacksPath)
 		if err != nil {
 			return err
 		}
@@ -212,30 +212,30 @@ func FetchGit(baseUrl, baseDir string) error {
 				fmt.Sprintf(".git/objects/pack/pack-%s.rev", sha1[1]),
 			)
 		}
-		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir}, false)
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseURL: baseURL, BaseDir: baseDir}, false)
 	}
 
-	log.Info().Str("base", baseUrl).Msg("finding objects")
+	log.Info().Str("base", baseURL).Msg("finding objects")
 	objs := make(map[string]bool) // object "set"
 	//var packed_objs [][]byte
 
 	files := []string{
-		utils.Url(baseDir, ".git/packed-refs"),
-		utils.Url(baseDir, ".git/info/refs"),
-		utils.Url(baseDir, ".git/info/grafts"),
+		utils.URL(baseDir, ".git/packed-refs"),
+		utils.URL(baseDir, ".git/info/refs"),
+		utils.URL(baseDir, ".git/info/grafts"),
 		// utils.Url(baseDir, ".git/info/sparse-checkout"), // TODO: ?
-		utils.Url(baseDir, ".git/FETCH_HEAD"),
-		utils.Url(baseDir, ".git/ORIG_HEAD"),
-		utils.Url(baseDir, ".git/HEAD"),
-		utils.Url(baseDir, ".git/objects/loose-object-idx"), // TODO: is this even a text file?
-		utils.Url(baseDir, ".git/objects/info/commit-graphs/commit-graph-chain"),
-		utils.Url(baseDir, ".git/objects/info/alternates"),
-		utils.Url(baseDir, ".git/objects/info/http-alternates"),
+		utils.URL(baseDir, ".git/FETCH_HEAD"),
+		utils.URL(baseDir, ".git/ORIG_HEAD"),
+		utils.URL(baseDir, ".git/HEAD"),
+		utils.URL(baseDir, ".git/objects/loose-object-idx"), // TODO: is this even a text file?
+		utils.URL(baseDir, ".git/objects/info/commit-graphs/commit-graph-chain"),
+		utils.URL(baseDir, ".git/objects/info/alternates"),
+		utils.URL(baseDir, ".git/objects/info/http-alternates"),
 	}
 
 	// TODO : fix if-else hell in the entire object hash collection code (and get rid of bad early returns)
 
-	gitRefsDir := utils.Url(baseDir, ".git/refs")
+	gitRefsDir := utils.URL(baseDir, ".git/refs")
 	if utils.Exists(gitRefsDir) {
 		if err := filepath.Walk(gitRefsDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -249,9 +249,9 @@ func FetchGit(baseUrl, baseDir string) error {
 			return err
 		}
 	}
-	gitLogsDir := utils.Url(baseDir, ".git/logs")
+	gitLogsDir := utils.URL(baseDir, ".git/logs")
 	if utils.Exists(gitLogsDir) {
-		refLogPrefix := utils.Url(gitLogsDir, "refs") + "/"
+		refLogPrefix := utils.URL(gitLogsDir, "refs") + "/"
 		if err := filepath.Walk(gitLogsDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -261,11 +261,11 @@ func FetchGit(baseUrl, baseDir string) error {
 
 				if strings.HasPrefix(path, refLogPrefix) {
 					refName := strings.TrimPrefix(path, refLogPrefix)
-					filePath := utils.Url(gitRefsDir, refName)
+					filePath := utils.URL(gitRefsDir, refName)
 					if !utils.Exists(filePath) {
 						log.Info().Str("dir", baseDir).Str("ref", refName).Msg("generating ref file")
 
-						content, err := ioutil.ReadFile(path)
+						content, err := os.ReadFile(path)
 						if err != nil {
 							log.Error().Str("dir", baseDir).Str("ref", refName).Err(err).Msg("couldn't read reflog file")
 							return nil
@@ -280,7 +280,7 @@ func FetchGit(baseUrl, baseDir string) error {
 							return nil
 						}
 
-						if err := ioutil.WriteFile(filePath, lastEntryObj, os.ModePerm); err != nil {
+						if err := os.WriteFile(filePath, lastEntryObj, os.ModePerm); err != nil {
 							log.Error().Str("file", filePath).Err(err).Msg("couldn't write to file")
 						}
 					}
@@ -296,7 +296,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			continue
 		}
 
-		content, err := ioutil.ReadFile(f)
+		content, err := os.ReadFile(f)
 		if err != nil {
 			log.Error().Str("file", f).Err(err).Msg("couldn't read reflog file")
 			return err
@@ -307,7 +307,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 	}
 
-	indexPath := utils.Url(baseDir, ".git/index")
+	indexPath := utils.URL(baseDir, ".git/index")
 	if utils.Exists(indexPath) {
 		f, err := os.Open(indexPath)
 		if err != nil {
@@ -324,7 +324,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 	}
 
-	objStorage := filesystem.NewObjectStorage(dotgit.New(osfs.New(utils.Url(baseDir, ".git"))), &cache.ObjectLRU{MaxSize: 256})
+	objStorage := filesystem.NewObjectStorage(dotgit.New(osfs.New(utils.URL(baseDir, ".git"))), &cache.ObjectLRU{MaxSize: 256})
 	if err := objStorage.ForEachObjectHash(func(hash plumbing.Hash) error {
 		objs[hash.String()] = true
 		encObj, err := objStorage.EncodedObject(plumbing.AnyObject, hash)
@@ -345,10 +345,10 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 
 	// Parse stand alone commit graph file
-	parseGraphFile(baseDir, utils.Url(baseDir, ".git/objects/info/commit-graph"), objs)
+	parseGraphFile(baseDir, utils.URL(baseDir, ".git/objects/info/commit-graph"), objs)
 
 	// Parse commit graph chains
-	commitGraphList := utils.Url(baseDir, ".git/objects/info/commit-graphs/commit-graph-chain")
+	commitGraphList := utils.URL(baseDir, ".git/objects/info/commit-graphs/commit-graph-chain")
 	if utils.Exists(commitGraphList) {
 		var graphFiles []string
 		jt = jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
@@ -366,9 +366,9 @@ func FetchGit(baseUrl, baseDir string) error {
 				}
 			}
 		}
-		jt.StartAndWait(workers.DownloadContext{C: c, BaseDir: baseDir, BaseUrl: baseUrl}, false)
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseDir: baseDir, BaseURL: baseURL}, false)
 		for _, graphFile := range graphFiles {
-			parseGraphFile(baseDir, utils.Url(baseDir, graphFile), objs)
+			parseGraphFile(baseDir, utils.URL(baseDir, graphFile), objs)
 		}
 	}
 
@@ -394,19 +394,19 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 	} */
 
-	log.Info().Str("base", baseUrl).Msg("fetching objects")
+	log.Info().Str("base", baseURL).Msg("fetching objects")
 	jt = jobtracker.NewJobTracker(workers.FindObjectsWorker, maxConcurrency, jobtracker.DefaultNapper)
 	for obj := range objs {
 		jt.AddJob(obj)
 	}
-	jt.StartAndWait(workers.FindObjectsContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, Storage: objStorage}, true)
+	jt.StartAndWait(workers.FindObjectsContext{C: c, BaseURL: baseURL, BaseDir: baseDir, Storage: objStorage}, true)
 
 	// exit early if we haven't managed to dump anything
 	if !utils.Exists(baseDir) {
 		return nil
 	}
 
-	fetchMissing(baseDir, baseUrl, objStorage)
+	fetchMissing(baseDir, baseURL, objStorage)
 
 	// TODO: disable lfs in checkout (for now lfs support depends on lfs NOT being setup on the system you use goop on)
 	if err := checkout(baseDir); err != nil {
@@ -414,9 +414,9 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 
 	// <fetch lfs objects and manually check them out>
-	fetchLfs(baseDir, baseUrl)
+	fetchLfs(baseDir, baseURL)
 
-	if err := fetchIgnored(baseDir, baseUrl); err != nil {
+	if err := fetchIgnored(baseDir, baseURL); err != nil {
 		return err
 	}
 
@@ -430,8 +430,8 @@ func checkout(baseDir string) error {
 	return cmd.Run()
 }
 
-func fetchLfs(baseDir, baseUrl string) {
-	attrPath := utils.Url(baseDir, ".gitattributes")
+func fetchLfs(baseDir, baseURL string) {
+	attrPath := utils.URL(baseDir, ".gitattributes")
 	if utils.Exists(attrPath) {
 		log.Info().Str("dir", baseDir).Msg("attempting to fetch potential git lfs objects")
 		f, err := os.Open(attrPath)
@@ -489,7 +489,7 @@ func fetchLfs(baseDir, baseUrl string) {
 		}
 
 		for _, file := range files {
-			fp := utils.Url(baseDir, file)
+			fp := utils.URL(baseDir, file)
 			if utils.Exists(fp) {
 				readStub(fp)
 			}
@@ -517,20 +517,21 @@ func fetchLfs(baseDir, baseUrl string) {
 		}
 
 		// TODO: global filters
+		_ = globalFilters
 
 		jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 		for _, hash := range hashes {
 			jt.AddJob(fmt.Sprintf(".git/lfs/objects/%s/%s/%s", hash[:2], hash[2:4], hash))
 		}
-		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir}, false)
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseURL: baseURL, BaseDir: baseDir}, false)
 	}
 }
 
 // Iterate over index to find missing files
-func fetchMissing(baseDir, baseUrl string, objStorage *filesystem.ObjectStorage) {
-	indexPath := utils.Url(baseDir, ".git/index")
+func fetchMissing(baseDir, baseURL string, objStorage *filesystem.ObjectStorage) {
+	indexPath := utils.URL(baseDir, ".git/index")
 	if utils.Exists(indexPath) {
-		log.Info().Str("base", baseUrl).Str("dir", baseDir).Msg("attempting to fetch potentially missing files")
+		log.Info().Str("base", baseURL).Str("dir", baseDir).Msg("attempting to fetch potentially missing files")
 
 		var missingFiles []string
 		var idx index.Index
@@ -547,16 +548,16 @@ func fetchMissing(baseDir, baseUrl string, objStorage *filesystem.ObjectStorage)
 		} else {
 			jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 			for _, entry := range idx.Entries {
-				if !strings.HasSuffix(entry.Name, ".php") && !utils.Exists(utils.Url(baseDir, fmt.Sprintf(".git/objects/%s/%s", entry.Hash.String()[:2], entry.Hash.String()[2:]))) {
+				if !strings.HasSuffix(entry.Name, ".php") && !utils.Exists(utils.URL(baseDir, fmt.Sprintf(".git/objects/%s/%s", entry.Hash.String()[:2], entry.Hash.String()[2:]))) {
 					missingFiles = append(missingFiles, entry.Name)
 					jt.AddJob(entry.Name)
 				}
 			}
-			jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true}, false)
+			jt.StartAndWait(workers.DownloadContext{C: c, BaseURL: baseURL, BaseDir: baseDir, AllowHTML: true, AlllowEmpty: true}, false)
 
 			jt = jobtracker.NewJobTracker(workers.CreateObjectWorker, maxConcurrency, jobtracker.DefaultNapper)
 			for _, f := range missingFiles {
-				if utils.Exists(utils.Url(baseDir, f)) {
+				if utils.Exists(utils.URL(baseDir, f)) {
 					jt.AddJob(f)
 				}
 			}
@@ -565,8 +566,8 @@ func fetchMissing(baseDir, baseUrl string, objStorage *filesystem.ObjectStorage)
 	}
 }
 
-func fetchIgnored(baseDir, baseUrl string) error {
-	ignorePath := utils.Url(baseDir, ".gitignore")
+func fetchIgnored(baseDir, baseURL string) error {
+	ignorePath := utils.URL(baseDir, ".gitignore")
 	if utils.Exists(ignorePath) {
 		log.Info().Str("base", baseDir).Msg("atempting to fetch ignored files")
 
@@ -593,7 +594,7 @@ func fetchIgnored(baseDir, baseUrl string) error {
 			return err
 		}
 
-		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true}, false)
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseURL: baseURL, BaseDir: baseDir, AllowHTML: true, AlllowEmpty: true}, false)
 	}
 	return nil
 }

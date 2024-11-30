@@ -1,7 +1,6 @@
 package workers
 
 import (
-	"io/ioutil"
 	"os"
 
 	"github.com/deletescape/goop/internal/utils"
@@ -21,7 +20,7 @@ type CreateObjectContext struct {
 func CreateObjectWorker(jt *jobtracker.JobTracker, f string, context jobtracker.Context) {
 	c := context.(CreateObjectContext)
 
-	fp := utils.Url(c.BaseDir, f)
+	fp := utils.URL(c.BaseDir, f)
 
 	entry, err := c.Index.Entry(f)
 	if err != nil {
@@ -39,7 +38,7 @@ func CreateObjectWorker(jt *jobtracker.JobTracker, f string, context jobtracker.
 	os.Chtimes(fp, entry.ModifiedAt, entry.ModifiedAt)
 	//log.Info().Str("file", f).Msg("updated from index")
 
-	content, err := ioutil.ReadFile(fp)
+	content, err := os.ReadFile(fp)
 	if err != nil {
 		log.Error().Str("file", f).Err(err).Msg("failed to read file")
 		return

@@ -1,7 +1,6 @@
 package workers
 
 import (
-	"io/ioutil"
 	"net/url"
 	"os"
 	"strings"
@@ -14,7 +13,7 @@ import (
 
 type RecursiveDownloadContext struct {
 	C       *fasthttp.Client
-	BaseUrl string
+	BaseURL string
 	BaseDir string
 }
 
@@ -23,13 +22,13 @@ func RecursiveDownloadWorker(jt *jobtracker.JobTracker, f string, context jobtra
 
 	checkRatelimted()
 
-	filePath := utils.Url(c.BaseDir, f)
+	filePath := utils.URL(c.BaseDir, f)
 	isDir := strings.HasSuffix(f, "/")
 	if !isDir && utils.Exists(filePath) {
 		log.Info().Str("file", filePath).Msg("already fetched, skipping redownload")
 		return
 	}
-	uri := utils.Url(c.BaseUrl, f)
+	uri := utils.URL(c.BaseURL, f)
 	code, body, err := c.C.Get(nil, uri)
 	if err == nil && code != 200 {
 		if code == 429 {
@@ -45,7 +44,7 @@ func RecursiveDownloadWorker(jt *jobtracker.JobTracker, f string, context jobtra
 	}
 
 	if isDir {
-		if !utils.IsHtml(body) {
+		if !utils.IsHTML(body) {
 			log.Warn().Str("uri", uri).Msg("not a directory index, skipping")
 			return
 		}
@@ -58,14 +57,14 @@ func RecursiveDownloadWorker(jt *jobtracker.JobTracker, f string, context jobtra
 		}
 		log.Info().Str("uri", uri).Msg("fetched directory listing")
 		for _, idxf := range indexedFiles {
-			jt.AddJob(utils.Url(f, idxf))
+			jt.AddJob(utils.URL(f, idxf))
 		}
 	} else {
 		if err := utils.CreateParentFolders(filePath); err != nil {
 			log.Error().Str("file", filePath).Err(err).Msg("couldn't create parent directories")
 			return
 		}
-		if err := ioutil.WriteFile(filePath, body, os.ModePerm); err != nil {
+		if err := os.WriteFile(filePath, body, os.ModePerm); err != nil {
 			log.Error().Str("file", filePath).Err(err).Msg("couldn't write to file")
 			return
 		}

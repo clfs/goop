@@ -2,7 +2,6 @@ package workers
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sync"
 
@@ -20,7 +19,7 @@ var checkedObjsMutex sync.Mutex
 
 type FindObjectsContext struct {
 	C       *fasthttp.Client
-	BaseUrl string
+	BaseURL string
 	BaseDir string
 	Storage *filesystem.ObjectStorage
 }
@@ -45,7 +44,7 @@ func FindObjectsWorker(jt *jobtracker.JobTracker, obj string, context jobtracker
 	checkedObjsMutex.Unlock()
 
 	file := fmt.Sprintf(".git/objects/%s/%s", obj[:2], obj[2:])
-	fullPath := utils.Url(c.BaseDir, file)
+	fullPath := utils.URL(c.BaseDir, file)
 	if utils.Exists(fullPath) {
 		log.Info().Str("obj", obj).Msg("already fetched, skipping redownload")
 		encObj, err := c.Storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash(obj))
@@ -65,7 +64,7 @@ func FindObjectsWorker(jt *jobtracker.JobTracker, obj string, context jobtracker
 		return
 	}
 
-	uri := utils.Url(c.BaseUrl, file)
+	uri := utils.URL(c.BaseURL, file)
 	code, body, err := c.C.Get(nil, uri)
 	if err == nil && code != 200 {
 		if code == 429 {
@@ -80,7 +79,7 @@ func FindObjectsWorker(jt *jobtracker.JobTracker, obj string, context jobtracker
 		return
 	}
 
-	if utils.IsHtml(body) {
+	if utils.IsHTML(body) {
 		log.Warn().Str("uri", uri).Msg("file appears to be html, skipping")
 		return
 	}
@@ -92,7 +91,7 @@ func FindObjectsWorker(jt *jobtracker.JobTracker, obj string, context jobtracker
 		log.Error().Str("uri", uri).Str("file", fullPath).Err(err).Msg("couldn't create parent directories")
 		return
 	}
-	if err := ioutil.WriteFile(fullPath, body, os.ModePerm); err != nil {
+	if err := os.WriteFile(fullPath, body, os.ModePerm); err != nil {
 		log.Error().Str("uri", uri).Str("file", fullPath).Err(err).Msg("clouldn't write file")
 		return
 	}
