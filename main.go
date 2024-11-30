@@ -1,23 +1,19 @@
 package main
 
 import (
+	"log/slog"
 	"os"
 
 	"github.com/deletescape/goop/cmd"
-	"github.com/phuslu/log"
 )
 
 func main() {
-	if log.IsTerminal(os.Stderr.Fd()) {
-		log.DefaultLogger = log.Logger{
-			TimeFormat: "15:04:05",
-			Caller:     1,
-			Writer: &log.ConsoleWriter{
-				ColorOutput:    true,
-				QuoteString:    true,
-				EndWithMessage: true,
-			},
-		}
+	opts := slog.HandlerOptions{
+		AddSource: true,
+		Level:     slog.LevelInfo,
 	}
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &opts)))
+
 	cmd.Execute()
 }

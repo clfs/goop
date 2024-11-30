@@ -2,6 +2,7 @@ package workers
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/phuslu/log"
 	"github.com/valyala/fasthttp"
 )
 
@@ -46,15 +46,15 @@ func FindObjectsWorker(jt *jobtracker.JobTracker, obj string, context jobtracker
 	file := fmt.Sprintf(".git/objects/%s/%s", obj[:2], obj[2:])
 	fullPath := utils.URL(c.BaseDir, file)
 	if utils.Exists(fullPath) {
-		log.Info().Str("obj", obj).Msg("already fetched, skipping redownload")
+		slog.Info("already fetched, skipping redownload", "obj", obj)
 		encObj, err := c.Storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash(obj))
 		if err != nil {
-			log.Error().Str("obj", obj).Err(err).Msg("couldn't read object")
+			slog.Error("couldn't read object", "obj", obj, "error", err)
 			return
 		}
 		decObj, err := object.DecodeObject(c.Storage, encObj)
 		if err != nil {
-			log.Error().Str("obj", obj).Err(err).Msg("couldn't decode object")
+			slog.Error("couldn't decode object", "obj", obj, "error", err)
 			return
 		}
 		referencedHashes := utils.GetReferencedHashes(decObj)
@@ -72,40 +72,40 @@ func FindObjectsWorker(jt *jobtracker.JobTracker, obj string, context jobtracker
 			jt.AddJob(obj)
 			return
 		}
-		log.Warn().Str("obj", obj).Int("code", code).Msg("failed to fetch object")
+		slog.Warn("failed to fetch object", "obj", obj, "code", code)
 		return
 	} else if err != nil {
-		log.Error().Str("obj", obj).Int("code", code).Err(err).Msg("failed to fetch object")
+		slog.Error("failed to fetch object", "obj", obj, "code", code, "error", err)
 		return
 	}
 
 	if utils.IsHTML(body) {
-		log.Warn().Str("uri", uri).Msg("file appears to be html, skipping")
+		slog.Warn("file appears to be html, skipping", "uri", uri)
 		return
 	}
 	if utils.IsEmptyBytes(body) {
-		log.Warn().Str("uri", uri).Msg("file appears to be empty, skipping")
+		slog.Warn("file appears to be empty, skipping", "uri", uri)
 		return
 	}
 	if err := utils.CreateParentFolders(fullPath); err != nil {
-		log.Error().Str("uri", uri).Str("file", fullPath).Err(err).Msg("couldn't create parent directories")
+		slog.Error("couldn't create parent directories", "uri", uri, "file", fullPath, "error", err)
 		return
 	}
 	if err := os.WriteFile(fullPath, body, os.ModePerm); err != nil {
-		log.Error().Str("uri", uri).Str("file", fullPath).Err(err).Msg("clouldn't write file")
+		slog.Error("couldn't write file", "uri", uri, "file", fullPath, "error", err)
 		return
 	}
 
-	log.Info().Str("obj", obj).Msg("fetched object")
+	slog.Info("fetched object", "obj", obj)
 
 	encObj, err := c.Storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash(obj))
 	if err != nil {
-		log.Error().Str("obj", obj).Err(err).Msg("couldn't read object")
+		slog.Error("couldn't read object", "obj", obj, "error", err)
 		return
 	}
 	decObj, err := object.DecodeObject(c.Storage, encObj)
 	if err != nil {
-		log.Error().Str("obj", obj).Err(err).Msg("couldn't decode object")
+		slog.Error("couldn't decode object", "obj", obj, "error", err)
 		return
 	}
 	referencedHashes := utils.GetReferencedHashes(decObj)
